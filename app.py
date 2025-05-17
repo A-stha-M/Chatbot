@@ -1,41 +1,70 @@
-from dotenv import load_dotenv
-load_dotenv() ## loading all the environment variables
-
 import streamlit as st
+from dotenv import load_dotenv
 import os
 import google.generativeai as genai
+from pymongo import MongoClient
 
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+# Load environment variables
+load_dotenv()
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+MONGO_URI = os.getenv("MONGO_URI")
 
-## function to load Gemini Pro model and get repsonses
-model=genai.GenerativeModel("gemini-1.5-flash-latest") 
-chat = model.start_chat(history=[])
+if not GOOGLE_API_KEY:
+    st.error("API key not found. Please set GOOGLE_API_KEY in .env")
+    st.stop()
+
+if not MONGO_URI:
+    st.error("Mongo URI not found. Please set MONGO_URI in .env")
+    st.stop()
+
+# Configure Gemini
+genai.configure(api_key=GOOGLE_API_KEY)
+
+# Connect to MongoDB
+client = MongoClient(MONGO_URI)
+db = client["chatbot_db"]
+collection = db["chat_history"]
+
+# Save chat message to MongoDB
+def save_chat(role, message):
+    collection.insert_one({"role": role, "message": message})
+
+# Load chat history from MongoDB
+def load_chat():
+    return list(collection.find({}, {"_id": 0}))
+
+# Load history for Gemini model
+gemini_history = [
+    {"role": h["role"].lower(), "parts": [h["message"]]}
+    for h in load_chat()
+]
+
+# Create chat session with previous history
+model = genai.GenerativeModel("gemini-1.5-flash-latest")
+chat = model.start_chat(history=gemini_history)
+
+# Function to get response
 def get_gemini_response(question):
-    
-    response=model.generate_content(question)
+    response = chat.send_message(question)
     return response.text
 
-##initialize our streamlit app
+# Streamlit UI
+st.set_page_config(page_title="Q&A with Gemini")
+st.title("💬 Gemini Flash Chatbot")
+st.caption("Using Gemini 1.5 Flash with MongoDB for chat history")
 
-st.set_page_config(page_title="Q&A Demo")
+input_text = st.text_input("Your question:", key="input")
+submit = st.button("Ask")
 
-st.header("Gemini LLM Application")
+if submit and input_text:
+    save_chat("User", input_text)
+    response = get_gemini_response(input_text)
+    save_chat("Model", response)
 
-# Initialize session state for chat history if it doesn't exist
-if 'chat_history' not in st.session_state:
-    st.session_state['chat_history'] = []
-
-input=st.text_input("Input: ",key="input")
-submit=st.button("Ask the question")
-
-if submit and input:
-    response=get_gemini_response(input)
-    # Add user query and response to session state chat history
-    st.session_state['chat_history'].append(("You", input))
-    st.subheader("The Response is")
+    st.subheader("Response")
     st.write(response)
-    st.session_state['chat_history'].append(("Bot", response))
-st.subheader("The Chat History is")
-    
-for role, text in st.session_state['chat_history']:
-    st.write(f"{role}: {text}")
+
+st.subheader("Chat History")
+
+for msg in load_chat():
+    st.markdown(f"**{msg['role']}**: {msg['message']}")

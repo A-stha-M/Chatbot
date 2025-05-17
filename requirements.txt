@@ -2,3 +2,4 @@ streamlit
 pdfplumber
 google-generativeai
 python-dotenv
+pymongo
