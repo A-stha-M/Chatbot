@@ -1,4 +1,4 @@
-# PDF Chatbot with Gemini API
+# Chatbot with Gemini API
 A lightweight chatbot built with Streamlit that lets users ask questions based on uploaded PDF content using Google Gemini Pro (free tier).
 
 ## Features
