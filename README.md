@@ -14,26 +14,26 @@ Maintains chat history using Streamlit session state
 📄 PDF Parsing: pdfplumber
 🐍 Language: Python
 
-## Setup Instructions
-1.Clone the repository
+# Setup Instructions
+## 1.Clone the repository
 git clone https://github.com/your-username/Chatbot.git
 cd Chatbot
 
-2.Create virtual environment
+## 2.Create virtual environment
 python -m venv venv
 
 source venv/bin/activate  
-# Windows: 
+#Windows: 
 GitBash: source venv/Scripts/activate
 Command Prompt: venv\Scripts\activate
 PowerShell: .\venv\Scripts\Activate.ps1
 
-3.Install dependencies
+## 3.Install dependencies
 pip install -r requirements.txt
 
-4.Add your Gemini API Key
+## 4.Add your Gemini API Key
 Create a .env file in the project root:
 GEMINI_API_KEY=your_api_key_here
 
-5.Run the app
+## 5.Run the app
 streamlit run app.py
