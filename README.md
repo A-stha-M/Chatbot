@@ -21,9 +21,12 @@ cd Chatbot
 
 2.Create virtual environment
 python -m venv venv
-source venv/bin/activate  # Windows: GitBash: source venv/Scripts/activate
-                                     Command Prompt: venv\Scripts\activate
-                                     PowerShell: .\venv\Scripts\Activate.ps1
+
+source venv/bin/activate  
+# Windows: 
+GitBash: source venv/Scripts/activate
+Command Prompt: venv\Scripts\activate
+PowerShell: .\venv\Scripts\Activate.ps1
 
 3.Install dependencies
 pip install -r requirements.txt
