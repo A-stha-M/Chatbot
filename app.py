@@ -8,7 +8,7 @@ import google.generativeai as genai
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 ## function to load Gemini Pro model and get repsonses
-model=genai.GenerativeModel("gemini-1.5-pro-latest") 
+model=genai.GenerativeModel("gemini-1.5-flash-latest") 
 chat = model.start_chat(history=[])
 def get_gemini_response(question):
     
@@ -33,9 +33,8 @@ if submit and input:
     # Add user query and response to session state chat history
     st.session_state['chat_history'].append(("You", input))
     st.subheader("The Response is")
-    for chunk in response:
-        st.write(chunk.text)
-        st.session_state['chat_history'].append(("Bot", chunk.text))
+    st.write(response)
+    st.session_state['chat_history'].append(("Bot", response))
 st.subheader("The Chat History is")
     
 for role, text in st.session_state['chat_history']:
