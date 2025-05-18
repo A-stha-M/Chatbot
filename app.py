@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 import os
 import google.generativeai as genai
 from pymongo import MongoClient
+import fitz  # PyMuPDF for PDF reading
 
 # Load environment variables
 load_dotenv()
@@ -33,38 +34,52 @@ def save_chat(role, message):
 def load_chat():
     return list(collection.find({}, {"_id": 0}))
 
-# Load history for Gemini model
-gemini_history = [
-    {"role": h["role"].lower(), "parts": [h["message"]]}
-    for h in load_chat()
+# Extract text from uploaded PDF
+def extract_text_from_pdf(uploaded_file):
+    text = ""
+    with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
+        for page in doc:
+            text += page.get_text()
+    return text
+
+# Load previous chat history
+chat_history = [
+    {"role": h["role"].lower(), "parts": [h["message"]]} for h in load_chat()
 ]
 
-# Create chat session with previous history
+# Initialize Gemini Flash model with previous chat history
 model = genai.GenerativeModel("gemini-1.5-flash-latest")
-chat = model.start_chat(history=gemini_history)
+chat = model.start_chat(history=chat_history)
 
-# Function to get response
-def get_gemini_response(question):
-    response = chat.send_message(question)
+# Get response from Gemini Flash model
+def get_gemini_response(prompt):
+    response = chat.send_message(prompt)
     return response.text
 
 # Streamlit UI
 st.set_page_config(page_title="Q&A with Gemini")
-st.title("💬 Gemini Flash Chatbot")
-st.caption("Using Gemini 1.5 Flash with MongoDB for chat history")
+st.title("Chatbot")
+st.caption("Upload a PDF and chat with it using Gemini Flash. History is saved in MongoDB.")
 
-input_text = st.text_input("Your question:", key="input")
+uploaded_file = st.file_uploader("Upload a PDF", type=["pdf"])
+question = st.text_input("Ask a question:")
 submit = st.button("Ask")
 
-if submit and input_text:
-    save_chat("User", input_text)
-    response = get_gemini_response(input_text)
+if uploaded_file and submit and question:
+    with st.spinner("Reading PDF..."):
+        pdf_text = extract_text_from_pdf(uploaded_file)
+
+    with st.spinner("Thinking..."):
+        prompt = f"PDF Content:\n{pdf_text[:8000]}\n\nQuestion: {question}"
+        response = get_gemini_response(prompt)
+
+    # Save to MongoDB
+    save_chat("User", question)
     save_chat("Model", response)
 
     st.subheader("Response")
     st.write(response)
 
 st.subheader("Chat History")
-
 for msg in load_chat():
     st.markdown(f"**{msg['role']}**: {msg['message']}")
