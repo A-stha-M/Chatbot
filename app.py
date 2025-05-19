@@ -3,7 +3,11 @@ from dotenv import load_dotenv
 import os
 import google.generativeai as genai
 from pymongo import MongoClient
-import fitz  # PyMuPDF for PDF reading
+import fitz  # PyMuPDF
+import pdfplumber  # For table extraction
+import pandas as pd
+from PIL import Image
+import io
 
 # Load environment variables
 load_dotenv()
@@ -34,52 +38,133 @@ def save_chat(role, message):
 def load_chat():
     return list(collection.find({}, {"_id": 0}))
 
-# Extract text from uploaded PDF
-def extract_text_from_pdf(uploaded_file):
+# Extract text from PDF
+def extract_text_from_pdf(file_bytes):
     text = ""
-    with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
+    with fitz.open(stream=file_bytes, filetype="pdf") as doc:
         for page in doc:
             text += page.get_text()
     return text
 
-# Load previous chat history
-chat_history = [
-    {"role": h["role"].lower(), "parts": [h["message"]]} for h in load_chat()
-]
+# Extract tables
+def extract_tables_from_pdf(file):
+    tables = []
+    with pdfplumber.open(file) as pdf:
+        for page in pdf.pages:
+            for table in page.extract_tables():
+                df = pd.DataFrame(table[1:], columns=table[0])
+                tables.append(df)
+    return tables
 
-# Initialize Gemini Flash model with previous chat history
-model = genai.GenerativeModel("gemini-1.5-flash-latest")
-chat = model.start_chat(history=chat_history)
+# Extract images from PDF
+def extract_images_from_pdf(file_bytes):
+    images_data = []
+    try:
+        with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+            for i, page in enumerate(doc):
+                for img in page.get_images(full=True):
+                    xref = img[0]
+                    base = doc.extract_image(xref)
+                    image_bytes = base["image"]
+                    try:
+                        image = Image.open(io.BytesIO(image_bytes))
+                        images_data.append({"page": i + 1, "image": image})
+                    except Exception as e:
+                        print(f"Error opening image on page {i+1}: {e}")
+    except Exception as e:
+        print(f"Error opening PDF for image extraction: {e}")
+    return images_data
 
-# Get response from Gemini Flash model
-def get_gemini_response(prompt):
-    response = chat.send_message(prompt)
+# Gemini model setup
+chat_history = [{"role": h["role"].lower(), "parts": [h["message"]]} for h in load_chat()]
+flash_model = genai.GenerativeModel("gemini-1.5-flash-latest")
+vision_model = genai.GenerativeModel("gemini-1.5-flash-latest")
+chat = flash_model.start_chat(history=chat_history)
+
+def get_gemini_response(context, question, images):
+    prompt_parts = [
+        f"""The following is extracted from a PDF document. Use it to answer the user's question.
+
+--- Start of PDF Text ---
+{context['text'][:4000]}...
+--- End of PDF Text ---
+
+--- Tables Extracted ---
+{context['tables_summary']}
+
+--- Image Information ---
+{context['image_captions']}
+
+User Question: {question}
+
+If the question is about an image, refer to the provided images. Indicate which page the image is from if relevant.
+"""
+    ]
+    image_parts_pil = [img_data["image"] for img_data in images]
+    contents = prompt_parts + image_parts_pil
+    response = vision_model.generate_content(contents)
     return response.text
 
 # Streamlit UI
-st.set_page_config(page_title="Q&A with Gemini")
-st.title("Chatbot")
-st.caption("Upload a PDF and chat with it using Gemini Flash. History is saved in MongoDB.")
+st.set_page_config(page_title="PDF Assistant with Gemini Vision")
+st.title("PDF Chat Assistant with Image Understanding")
+st.caption("Upload a PDF and ask questions about its content including text, tables, and images.")
 
 uploaded_file = st.file_uploader("Upload a PDF", type=["pdf"])
-question = st.text_input("Ask a question:")
+question = st.text_input("Ask a question about the uploaded PDF:")
 submit = st.button("Ask")
 
-if uploaded_file and submit and question:
-    with st.spinner("Reading PDF..."):
-        pdf_text = extract_text_from_pdf(uploaded_file)
+if uploaded_file:
+    uploaded_file.seek(0)
+    file_bytes = uploaded_file.read()
 
-    with st.spinner("Thinking..."):
-        prompt = f"PDF Content:\n{pdf_text[:8000]}\n\nQuestion: {question}"
-        response = get_gemini_response(prompt)
+    # Extract text
+    pdf_text = extract_text_from_pdf(file_bytes)
 
-    # Save to MongoDB
-    save_chat("User", question)
-    save_chat("Model", response)
+    # Extract tables
+    uploaded_file.seek(0)
+    tables = extract_tables_from_pdf(uploaded_file)
+    tables_summary = ""
+    if tables:
+        for i, df in enumerate(tables):
+            st.subheader(f"Table {i+1}")
+            st.dataframe(df)
+            tables_summary += f"Table {i+1}:\n{df.to_string(index=False)}\n\n"
+    else:
+        tables_summary = "No tables found."
 
-    st.subheader("Response")
-    st.write(response)
+    # Extract images
+    uploaded_file.seek(0)
+    extracted_images = extract_images_from_pdf(file_bytes)
+    image_captions = []
+    if extracted_images:
+        for img_data in extracted_images:
+            image_captions.append(f"Image found on Page {img_data['page']}")
+    else:
+        st.info("No images found in the PDF.")
+    image_captions_str = "\n".join(image_captions)
+
+    # Handle Question
+    if question and submit:
+        with st.spinner("Reading PDF and querying Gemini Vision..."):
+            context = {
+                "text": pdf_text,
+                "tables_summary": tables_summary,
+                "image_captions": image_captions_str
+            }
+
+            answer = get_gemini_response(context, question, extracted_images)
+
+            # Save chat
+            save_chat("User", question)
+            save_chat("Model", answer)
+
+        st.subheader("Gemini Response")
+        st.write(answer)
 
 st.subheader("Chat History")
 for msg in load_chat():
     st.markdown(f"**{msg['role']}**: {msg['message']}")
+
+# Close MongoDB connection
+client.close()
