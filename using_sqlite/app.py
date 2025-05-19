@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 import os
 import google.generativeai as genai
 import sqlite3
-import fitz
+import fitz  # PyMuPDF
 from PIL import Image
 import io
 import datetime
@@ -16,11 +16,11 @@ if not GOOGLE_API_KEY:
     st.error("API key not found. Please set GOOGLE_API_KEY in .env")
     st.stop()
 
-# Configure Streamlit Theme (Optional - Adjust as needed)
-st.config.set_option("theme.base", "dark")  # or "light"
-st.config.set_option("theme.primaryColor", "#673ab7")  # Deep Purple
-st.config.set_option("theme.secondaryBackgroundColor", "#303030") # Dark Gray
-st.config.set_option("theme.textColor", "#ffffff")      # White
+# Configure Streamlit Theme
+st.config.set_option("theme.base", "dark")
+st.config.set_option("theme.primaryColor", "#673ab7")
+st.config.set_option("theme.secondaryBackgroundColor", "#303030")
+st.config.set_option("theme.textColor", "#ffffff")
 st.config.set_option("theme.font", "sans serif")
 
 st.set_page_config(page_title="Document Chatbot with Gemini Flash", layout="centered")
@@ -65,12 +65,28 @@ def process_document_and_ask_gemini(uploaded_file, question):
     try:
         file_bytes = uploaded_file.read()
         mime_type = uploaded_file.type
-        contents = [
-            {"role": "user", "parts": [question]},
-            {"role": "user", "parts": [{"mime_type": mime_type, "data": file_bytes}]},
-        ]
+
+        if mime_type == "application/pdf":
+            # Extract text from PDF
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            text = ""
+            for page in doc:
+                text += page.get_text()
+
+            contents = [
+                {"role": "user", "parts": [f"Here is the content of the PDF document:\n\n{text}"]},
+                {"role": "user", "parts": [question]},
+            ]
+        else:
+            # For images
+            contents = [
+                {"role": "user", "parts": [question]},
+                {"role": "user", "parts": [{"mime_type": mime_type, "data": file_bytes}]},
+            ]
+
         response = model.generate_content(contents)
         return response.text
+
     except Exception as e:
         return f"Error processing document: {e}"
 
