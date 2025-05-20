@@ -8,9 +8,9 @@ import pdfplumber  # For table extraction
 import pandas as pd
 from PIL import Image
 import io
-from streamlit_mic_recorder import mic_recorder  # Import the microphone component
+from streamlit_mic_recorder import mic_recorder
 import whisper
-import tempfile  # For creating temporary files
+import tempfile
 
 # Load environment variables
 load_dotenv()
@@ -46,8 +46,8 @@ def initialize_session_state():
     if "extracted_images" not in st.session_state:
         st.session_state.extracted_images = []
     if "just_chat" not in st.session_state:
-        st.session_state.just_chat = False # Add a new session state
-    if "audio_data" not in st.session_state:  # Add this
+        st.session_state.just_chat = False
+    if "audio_data" not in st.session_state:
         st.session_state.audio_data = None
 
 initialize_session_state()
@@ -109,13 +109,13 @@ def extract_images_from_pdf(file_bytes):
 # Transcribe audio using Whisper
 def transcribe_audio_whisper(audio_bytes):
     try:
-        model = whisper.load_model("base")  # You can choose different models ('tiny', 'base', 'small', 'medium', 'large')
+        model = whisper.load_model("base")
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
             tmp_file.write(audio_bytes)
             temp_file_name = tmp_file.name
 
         result = model.transcribe(temp_file_name)
-        os.remove(temp_file_name)  # Clean up the temporary file
+        os.remove(temp_file_name)
         return result["text"]
     except Exception as e:
         st.error(f"Error transcribing audio with Whisper: {e}")
@@ -129,7 +129,6 @@ chat = flash_model.start_chat(history=chat_history)
 
 def get_gemini_response(context, question, images, just_chat=False):
     if just_chat:
-        # Use the chat session to maintain context
         response = chat.send_message(question)
         return response.text
     else:
@@ -161,11 +160,17 @@ st.set_page_config(page_title="PDF Assistant with Gemini Vision")
 st.title("PDF Chat Assistant with Image Understanding")
 st.caption("Upload a PDF and ask questions about its content, or just chat!")
 
-uploaded_file = st.file_uploader("Upload a PDF", type=["pdf"])
+# Chat mode selector
+st.session_state.just_chat = st.radio("Chat Mode", ('PDF Chat', 'General Chat'), index=0) == 'General Chat'
 
-# Add the microphone recorder
+# Show PDF uploader only in PDF mode
+uploaded_file = None
+if not st.session_state.just_chat:
+    uploaded_file = st.file_uploader("Upload a PDF", type=["pdf"])
+
+# Microphone input
 audio_data = mic_recorder(start_prompt="Click to Record", stop_prompt="Click to Stop", key="audio_recorder")
-st.session_state.audio_data = audio_data # Store the audio data
+st.session_state.audio_data = audio_data
 
 voice_question = None
 if st.session_state.audio_data:
@@ -177,10 +182,6 @@ if st.session_state.audio_data:
 
 question = st.text_input("Ask a question about the uploaded PDF or just chat:", value=voice_question if voice_question else "")
 submit = st.button("Ask")
-
-# Add a radio button to select the mode
-st.session_state.just_chat = st.radio("Chat Mode", ('PDF Chat', 'General Chat'), index=0) == 'General Chat'
-
 
 if uploaded_file:
     uploaded_file.seek(0)
@@ -217,10 +218,6 @@ if question and submit:
     with st.spinner("Processing your request..."):
         if st.session_state.just_chat or not uploaded_file:
             answer = get_gemini_response("", question, [], just_chat=True)
-            save_chat("User", question)
-            save_chat("Model", answer)
-            st.session_state.messages.append({"role": "user", "content": question})
-            st.session_state.messages.append({"role": "assistant", "content": answer})
         else:
             context = {
                 "text": st.session_state.pdf_text,
@@ -228,10 +225,13 @@ if question and submit:
                 "image_captions": st.session_state.image_captions_str
             }
             answer = get_gemini_response(context, question, st.session_state.extracted_images)
-            save_chat("User", question)
-            save_chat("Model", answer)
-            st.session_state.messages.append({"role": "user", "content": question})
-            st.session_state.messages.append({"role": "assistant", "content": answer})
+
+        save_chat("User", question)
+        save_chat("Model", answer)
+        st.session_state.messages.append({"role": "user", "content": question})
+        st.session_state.messages.append({"role": "assistant", "content": answer})
+
+        st.session_state.audio_data = None
 
         st.subheader("Gemini Response")
         st.write(answer)
