@@ -236,6 +236,7 @@ if question and submit:
         }
         answer = get_gemini_response(ctx, question, st.session_state.extracted_images)
 
+
     save_chat("User", question)
     save_chat("Model", answer)
     st.session_state.messages += [
