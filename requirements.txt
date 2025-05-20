@@ -1,8 +1,10 @@
 streamlit
-pdfplumber
-google-generativeai
 python-dotenv
+google-generativeai
 pymongo
-pymupdf
-Pillow
+PyMuPDF
+pdfplumber
 pandas
+Pillow
+streamlit-mic-recorder
+whisper
