@@ -7,6 +7,10 @@ import fitz
 from PIL import Image
 import io
 import datetime
+import whisper
+from streamlit_mic_recorder import mic_recorder
+import tempfile
+import torch
 
 # Load environment variables
 load_dotenv()
@@ -30,7 +34,12 @@ def load_gemini_model(api_key):
     genai.configure(api_key=api_key)
     return genai.GenerativeModel("gemini-1.5-flash-latest")
 
+@st.cache_resource
+def load_whisper_model():
+    return whisper.load_model("base")  # You can change to "tiny" or "small" for faster inference
+
 model = load_gemini_model(GOOGLE_API_KEY)
+whisper_model = load_whisper_model()
 
 conn = sqlite3.connect("chat_history.db", check_same_thread=False)
 cursor = conn.cursor()
@@ -86,6 +95,17 @@ tab1, tab2 = st.tabs(["📑 Document Q&A", "💬 General Chat"])
 with tab1:
     uploaded_file = st.file_uploader("Upload a PDF or image file", type=["pdf", "png", "jpg", "jpeg"])
     question = st.text_input("Ask a question about the document:")
+
+    audio_doc = mic_recorder(start_prompt="🎤 Record Question", stop_prompt="🛑 Stop Recording", key="mic_doc")
+
+    if audio_doc:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            f.write(audio_doc["bytes"])
+            f.flush()
+            result_doc = whisper_model.transcribe(f.name)
+            question = result_doc["text"]
+            st.success(f"Transcribed Question: {question}")
+
     submit = st.button("Ask", key="doc_ask")
 
     if uploaded_file and submit and question:
@@ -119,7 +139,19 @@ with tab2:
                 st.markdown(f"<div style='padding:10px;border-radius:10px;margin-bottom:15px'><strong>Gemini:</strong><br>{msg}</div>", unsafe_allow_html=True)
 
     with input_placeholder:
+        # Voice input
+        audio = mic_recorder(start_prompt="🎤 Record Voice", stop_prompt="🛑 Stop", key="mic")
+
         chat_input = st.text_input("Type your message:", key="chat_input")
+
+        if audio:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                f.write(audio["bytes"])
+                f.flush()
+                result = whisper_model.transcribe(f.name)
+                chat_input = result["text"]
+                st.success(f"Transcribed Voice: {chat_input}")
+
         send_chat = st.button("Send", key="chat_send")
 
         if send_chat and chat_input:
